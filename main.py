@@ -12,6 +12,7 @@ from typing import Optional
 from aiogram import Bot, Dispatcher, Router, F
 from aiogram.filters import Filter
 from aiogram.fsm.context import FSMContext
+from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup,
