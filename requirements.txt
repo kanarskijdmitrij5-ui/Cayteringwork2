@@ -1,0 +1,6 @@
+aiogram==3.13.1
+sqlalchemy==2.0.36
+asyncpg==0.30.0
+httpx==0.28.1
+python-dotenv==1.0.1
+codewords-client==0.4.6
