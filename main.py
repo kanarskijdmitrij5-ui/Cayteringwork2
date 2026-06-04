@@ -936,7 +936,7 @@ async def adm_pending(msg: Message):
     if not emps: return await msg.answer("✅ Нет ожидающих.")
     await msg.answer("⏳ *Ожидают:*", parse_mode="Markdown", reply_markup=kb_emp_list(emps))
 
-@admin_r.callback_query(IsTA(), F.data.startswith("emp:"))
+@admin_r.callback_query(F.data.startswith("emp:"), IsTA())
 async def adm_emp(cb: CallbackQuery):
     await ensure_db()
     eid = int(cb.data.split(":")[1])
@@ -952,7 +952,7 @@ async def adm_emp(cb: CallbackQuery):
         f"*Этот месяц:* {sm['shifts']} смен | {sm['hours']}ч | {sm['salary']} ₽",
         parse_mode="Markdown", reply_markup=kb_emp_actions(eid, e.status == "blocked"))
 
-@admin_r.callback_query(IsTA(), F.data.startswith("approve:"))
+@admin_r.callback_query(F.data.startswith("approve:"), IsTA())
 async def adm_approve(cb: CallbackQuery, bot: Bot):
     await ensure_db()
     eid = int(cb.data.split(":")[1])
@@ -964,7 +964,7 @@ async def adm_approve(cb: CallbackQuery, bot: Bot):
     try: await bot.send_message(e.telegram_id, "✅ Заявка одобрена! Нажмите /start")
     except Exception: pass
 
-@admin_r.callback_query(IsTA(), F.data.startswith("reject:"))
+@admin_r.callback_query(F.data.startswith("reject:"), IsTA())
 async def adm_reject(cb: CallbackQuery, bot: Bot):
     await ensure_db()
     eid = int(cb.data.split(":")[1])
@@ -976,7 +976,7 @@ async def adm_reject(cb: CallbackQuery, bot: Bot):
     try: await bot.send_message(e.telegram_id, "❌ Заявка отклонена. Обратитесь к менеджеру.")
     except Exception: pass
 
-@admin_r.callback_query(IsTA(), F.data.startswith("block:"))
+@admin_r.callback_query(F.data.startswith("block:"), IsTA())
 async def adm_block(cb: CallbackQuery, bot: Bot):
     await ensure_db()
     eid = int(cb.data.split(":")[1])
@@ -1051,7 +1051,7 @@ async def adm_broadcast_send(msg: Message, state: FSMContext):
         parse_mode="Markdown", reply_markup=kb_admin())
 
 
-@admin_r.callback_query(IsTA(), F.data.startswith("invite_emp:"))
+@admin_r.callback_query(F.data.startswith("invite_emp:"), IsTA())
 async def adm_invite_ask(cb: CallbackQuery, state: FSMContext):
     """Admin selects employee to invite — ask for shift date/time."""
     await ensure_db()
@@ -1108,7 +1108,7 @@ async def adm_invite_send(msg: Message, state: FSMContext):
             reply_markup=kb_admin())
 
 
-@admin_r.callback_query(IsTA(), F.data.startswith("setrate:"))
+@admin_r.callback_query(F.data.startswith("setrate:"), IsTA())
 async def adm_setrate_ask(cb: CallbackQuery, state: FSMContext):
     """Ask admin for individual hourly rate for a specific employee."""
     await ensure_db()
@@ -1156,7 +1156,7 @@ async def adm_setrate_save(msg: Message, state: FSMContext):
         reply_markup=kb_admin())
 
 
-@admin_r.callback_query(IsTA(), F.data.startswith("rate_shift:"))
+@admin_r.callback_query(F.data.startswith("rate_shift:"), IsTA())
 async def adm_rate_shift(cb: CallbackQuery, state: FSMContext):
     """Handle star rating click for a completed shift."""
     await ensure_db()
@@ -1225,7 +1225,7 @@ async def adm_rating_comment(msg: Message, state: FSMContext):
             pass
 
 
-@admin_r.callback_query(IsTA(), F.data.startswith("unblock:"))
+@admin_r.callback_query(F.data.startswith("unblock:"), IsTA())
 async def adm_unblock(cb: CallbackQuery):
     await ensure_db()
     eid = int(cb.data.split(":")[1])
@@ -1243,7 +1243,7 @@ async def adm_rates(msg: Message):
         parse_mode="Markdown",
         reply_markup=kb_rate_roles())
 
-@admin_r.callback_query(IsTA(), F.data.startswith("rate_role:"))
+@admin_r.callback_query(F.data.startswith("rate_role:"), IsTA())
 async def adm_rate_ask(cb: CallbackQuery, state: FSMContext):
     role = cb.data.split(":")[1]
     await state.update_data(rate_role=role)
@@ -1380,8 +1380,8 @@ async def main():
     bot = Bot(token=token)
     dp = Dispatcher(storage=make_storage())
     dp.include_router(sa_r)
-    dp.include_router(admin_r)
     dp.include_router(reg_r)
+    dp.include_router(admin_r)
     dp.include_router(shift_r)
     dp.include_router(sal_r)
     await ensure_db()
