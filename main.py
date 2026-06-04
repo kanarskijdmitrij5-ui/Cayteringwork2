@@ -17,6 +17,7 @@ from aiogram.types import (
 import logging
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logging.getLogger("aiogram.event").setLevel(logging.DEBUG)
 logger = logging.getLogger("cayteringwork")
 from sqlalchemy import (
     BigInteger, Boolean, Column, DateTime, Float, ForeignKey,
@@ -772,6 +773,7 @@ async def reg_name(msg: Message, state: FSMContext):
 
 @reg_r.callback_query(RegSt.role, F.data.startswith("role:"))
 async def reg_role(cb: CallbackQuery, state: FSMContext):
+    logger.info(f"reg_role: user={cb.from_user.id}, role_data={cb.data}")
     await ensure_db()
     role = cb.data.split(":")[1]
     await state.update_data(role=role)
@@ -1360,6 +1362,20 @@ async def check_expiry(bot: Bot):
 
 
 # ════════════════ MAIN (POLLING) ══════════════════════════
+
+# ── FALLBACK HANDLER ──────────────────────────────────────────────────────────
+# Catches any callback_query that no other handler matched (e.g. stale buttons
+# from old messages after a bot restart). Gives a friendly message instead of silence.
+
+@reg_r.callback_query()
+async def fallback_callback(cb: CallbackQuery, state: FSMContext):
+    current_state = await state.get_state()
+    logger.info(f"Unmatched callback: data={cb.data!r}, state={current_state}, user={cb.from_user.id}")
+    await cb.answer(
+        "⚠️ Сессия истекла — напишите /start чтобы начать заново.",
+        show_alert=True
+    )
+
 
 async def main():
     token = os.environ["BOT_TOKEN"]
