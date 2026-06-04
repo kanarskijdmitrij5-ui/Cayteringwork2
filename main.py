@@ -58,6 +58,21 @@ def make_storage():
         return RedisStorage.from_url(redis_url)
     return MemoryStorage()
 
+# ── COMPANY RULES TEXT ────────────────────────────────────────────────────────
+COMPANY_RULES = (
+    "📋 <b>ПРАВИЛА СОТРУДНИКОВ CAYTERINGWORK_BOT</b>\n\n"
+    "1. Приходить на смену строго в назначенное время.\n"
+    "2. Иметь опрятный внешний вид и чистую форму.\n"
+    "3. Вежливо и профессионально общаться с гостями.\n"
+    "4. Соблюдать стандарты обслуживания заведения.\n"
+    "5. Бережно обращаться с инвентарём и оборудованием.\n"
+    "6. Не использовать телефон в зале во время смены.\n"
+    "7. Немедленно сообщать о проблемах менеджеру.\n"
+    "8. Соблюдать санитарно-гигиенические нормы.\n"
+    "9. Не покидать рабочее место без разрешения менеджера.\n"
+    "10. Сохранять коммерческую тайну заведения."
+)
+
 class Base(DeclarativeBase):
     pass
 
@@ -772,6 +787,7 @@ async def reg_name(msg: Message, state: FSMContext):
 
 @reg_r.callback_query(RegSt.role, F.data.startswith("role:"))
 async def reg_role(cb: CallbackQuery, state: FSMContext):
+    await cb.answer()  # acknowledge button press immediately
     await ensure_db()
     role = cb.data.split(":")[1]
     await state.update_data(role=role)
@@ -780,16 +796,17 @@ async def reg_role(cb: CallbackQuery, state: FSMContext):
     async with db() as s:
         tenant = await q_tenant_id(s, d.get("tenant_id"))
         tname = tenant.name.title() if tenant else "CayteringWork"
-    # Replace header in rules with tenant-specific name
+    # Replace header in rules with tenant-specific name (HTML safe)
     rules_text = COMPANY_RULES.replace(
-        "📋 *ПРАВИЛА СОТРУДНИКОВ CAYTERINGWORK_BOT*",
-        f"📋 *ПРАВИЛА СОТРУДНИКОВ {tname.upper()} CATERING*"
+        "📋 <b>ПРАВИЛА СОТРУДНИКОВ CAYTERINGWORK_BOT</b>",
+        f"📋 <b>ПРАВИЛА СОТРУДНИКОВ {tname.upper()} CATERING</b>"
     )
-    await cb.message.edit_text(rules_text, parse_mode="Markdown", reply_markup=kb_rules())
+    await cb.message.edit_text(rules_text, parse_mode="HTML", reply_markup=kb_rules())
     await state.set_state(RegSt.rules)
 
 @reg_r.callback_query(RegSt.rules, F.data == "accept_rules")
 async def reg_accept(cb: CallbackQuery, state: FSMContext, bot: Bot):
+    await cb.answer()  # acknowledge immediately
     await ensure_db()
     d = await state.get_data()
     async with db() as s:
