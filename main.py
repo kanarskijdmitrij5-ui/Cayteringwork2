@@ -35,7 +35,16 @@ def md(t: str) -> str:
         t = str(t).replace(ch, f"\\{ch}")
     return t
 
+# ── ENV & CONSTANTS ───────────────────────────────────────────────────────────
 
+def _get(key: str, default: str = "") -> str:
+    return os.environ.get(key, default)
+
+GEO_RADIUS: int = int(_get("GEO_RADIUS_METERS", "300"))
+
+# Support both SUPER_ADMIN_IDS (comma-separated) and legacy SUPER_ADMIN_ID
+_sa_raw = _get("SUPER_ADMIN_IDS", "") or _get("SUPER_ADMIN_ID", "742587575")
+SUPER_ADMIN_IDS: set[int] = {int(x.strip()) for x in _sa_raw.split(",") if x.strip()}
 
 class Base(DeclarativeBase):
     pass
