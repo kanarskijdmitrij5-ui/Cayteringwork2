@@ -26,6 +26,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 from aiogram.fsm.storage.memory import MemoryStorage
+try:
+    from aiogram.fsm.storage.redis import RedisStorage
+    _redis_available = True
+except ImportError:
+    _redis_available = False
 
 # ── FSM STORAGE (MemoryStorage — fine for polling on Railway) ─────────────────
 
@@ -45,6 +50,13 @@ GEO_RADIUS: int = int(_get("GEO_RADIUS_METERS", "300"))
 # Support both SUPER_ADMIN_IDS (comma-separated) and legacy SUPER_ADMIN_ID
 _sa_raw = _get("SUPER_ADMIN_IDS", "") or _get("SUPER_ADMIN_ID", "742587575")
 SUPER_ADMIN_IDS: set[int] = {int(x.strip()) for x in _sa_raw.split(",") if x.strip()}
+
+def make_storage():
+    """Use Redis if REDIS_URL is set, fallback to MemoryStorage."""
+    redis_url = os.environ.get("REDIS_URL", "")
+    if redis_url and _redis_available:
+        return RedisStorage.from_url(redis_url)
+    return MemoryStorage()
 
 class Base(DeclarativeBase):
     pass
@@ -1352,7 +1364,7 @@ async def check_expiry(bot: Bot):
 async def main():
     token = os.environ["BOT_TOKEN"]
     bot = Bot(token=token)
-    dp = Dispatcher(storage=MemoryStorage())
+    dp = Dispatcher(storage=make_storage())
     dp.include_router(sa_r)
     dp.include_router(admin_r)
     dp.include_router(reg_r)
