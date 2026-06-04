@@ -1378,18 +1378,14 @@ async def check_expiry(bot: Bot):
 
 # ════════════════ MAIN (POLLING) ══════════════════════════
 
-# ── FALLBACK HANDLER ──────────────────────────────────────────────────────────
-# Catches any callback_query that no other handler matched (e.g. stale buttons
-# from old messages after a bot restart). Gives a friendly message instead of silence.
 
-@reg_r.callback_query()
+# ── FALLBACK ROUTER (included LAST) ───────────────────────────────────────────
+fallback_r = Router()
+
+@fallback_r.callback_query()
 async def fallback_callback(cb: CallbackQuery, state: FSMContext):
-    current_state = await state.get_state()
-    logger.info(f"Unmatched callback: data={cb.data!r}, state={current_state}, user={cb.from_user.id}")
-    await cb.answer(
-        "⚠️ Сессия истекла — напишите /start чтобы начать заново.",
-        show_alert=True
-    )
+    """Catch stale callbacks (e.g. from messages before bot restart)."""
+    await cb.answer("⚠️ Сессия истекла — напишите /start", show_alert=True)
 
 
 async def main():
@@ -1401,6 +1397,7 @@ async def main():
     dp.include_router(admin_r)
     dp.include_router(shift_r)
     dp.include_router(sal_r)
+    dp.include_router(fallback_r)  # MUST be last
     await ensure_db()
     logger.info("CayteringWork Bot starting...")
     await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
