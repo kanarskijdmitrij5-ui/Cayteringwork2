@@ -1,25 +1,5 @@
-# /// script
-# requires-python = "==3.11.*"
-# dependencies = [
-#   "codewords-client==0.4.6",
-#   "fastapi==0.116.1",
-#   "aiogram==3.13.1",
-#   "sqlalchemy==2.0.36",
-#   "asyncpg==0.30.0",
-#   "httpx==0.28.1",
-# ]
-# [tool.env-checker]
-# env_vars = [
-#   "PORT=8000",
-#   "LOGLEVEL=INFO",
-#   "CODEWORDS_API_KEY",
-#   "CODEWORDS_RUNTIME_URI",
-#   "TELEGRAM_BOT_TOKEN",
-#   "DATABASE_URL",
-#   "SUPER_ADMIN_IDS",   # comma-separated list, e.g. 742587575,64408195
-#   "GEO_RADIUS_METERS=300",
-# ]
-# ///
+#!/usr/bin/env python3
+# CayteringWork Bot — Railway standalone (polling mode)
 
 import json, math, os, asyncio
 from contextlib import asynccontextmanager
@@ -34,9 +14,10 @@ from aiogram.types import (
     CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup,
     KeyboardButton, Message, ReplyKeyboardMarkup, Update,
 )
-from codewords_client import AsyncCodewordsClient, logger, run_service
-from fastapi import FastAPI, Request
-from pydantic import BaseModel, Field
+import logging
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger("cayteringwork")
 from sqlalchemy import (
     BigInteger, Boolean, Column, DateTime, Float, ForeignKey,
     Integer, String, Text, and_, func, select, update,
@@ -44,11 +25,9 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, relationship
 
-from aiogram.fsm.storage.base import BaseStorage, StorageKey
-from codewords_client import redis_client
+from aiogram.fsm.storage.memory import MemoryStorage
 
-# ── PERSISTENT FSM STORAGE (CodeWords Redis) ─────────────────────────────────
-# MemoryStorage resets on every new process — use Redis for persistent FSM state
+# ── FSM STORAGE (MemoryStorage — fine for polling on Railway) ─────────────────
 
 def md(t: str) -> str:
     """Escape Markdown special chars to prevent TelegramBadRequest parse errors."""
@@ -57,84 +36,6 @@ def md(t: str) -> str:
     return t
 
 
-class CWRedisStorage(BaseStorage):
-    """FSM storage backed by CodeWords Redis — survives service restarts."""
-
-    @staticmethod
-    def _k(ns: str, key: StorageKey, suffix: str) -> str:
-        return f"{ns}:fsm:{key.chat_id}:{key.user_id}:{suffix}"
-
-    async def set_state(self, key: StorageKey, state=None) -> None:
-        async with redis_client() as (r, ns):
-            k = self._k(ns, key, "state")
-            if state is None:
-                await r.delete(k)
-            else:
-                v = state.state if hasattr(state, "state") else str(state)
-                await r.set(k, v, ex=3600)
-
-    async def get_state(self, key: StorageKey):
-        async with redis_client() as (r, ns):
-            return await r.get(self._k(ns, key, "state"))
-
-    async def set_data(self, key: StorageKey, data: dict) -> None:
-        async with redis_client() as (r, ns):
-            await r.set(self._k(ns, key, "data"), json.dumps(data, ensure_ascii=False), ex=3600)
-
-    async def get_data(self, key: StorageKey) -> dict:
-        async with redis_client() as (r, ns):
-            raw = await r.get(self._k(ns, key, "data"))
-            return json.loads(raw) if raw else {}
-
-    async def close(self) -> None:
-        pass
-
-
-# ── CONFIG ────────────────────────────────────────────────────────────────────
-# All env vars read lazily to allow deployment without values present
-
-def _get(key, default=None):
-    return os.environ.get(key, default)
-
-# Support both SUPER_ADMIN_IDS (comma-separated) and legacy SUPER_ADMIN_ID
-_sa_raw = _get("SUPER_ADMIN_IDS", "") or _get("SUPER_ADMIN_ID", "742587575")
-SUPER_ADMIN_IDS: set[int] = {int(x.strip()) for x in _sa_raw.split(",") if x.strip()}
-GEO_RADIUS      = int(_get("GEO_RADIUS_METERS", "300"))
-
-COMPANY_RULES = """📋 *ПРАВИЛА СОТРУДНИКОВ CAYTERINGWORK_BOT*
-
-━━━━━━━━━━━━━━━━━━━━━━
-👔 *1. ДРЕСС-КОД*
-• Чистая форма, закрытая обувь, бейдж
-• Волосы убраны, нейтральный парфюм
-
-━━━━━━━━━━━━━━━━━━━━━━
-🤝 *2. ПОВЕДЕНИЕ С ГОСТЯМИ*
-• Вежливость, уважение, обращение на «Вы»
-• При конфликте — немедленно сообщить менеджеру
-
-━━━━━━━━━━━━━━━━━━━━━━
-🍷 *3. АЛКОГОЛЬ И ЕДА*
-• Алкоголь — строгий запрет до и во время смены
-• Еда — только в отведённом месте
-
-━━━━━━━━━━━━━━━━━━━━━━
-⏰ *4. ОПОЗДАНИЯ*
-• Предупредить за 4 часа при невозможности выйти
-• 3 нарушения в месяц — блокировка аккаунта
-
-━━━━━━━━━━━━━━━━━━━━━━
-📍 *5. ГЕОЛОКАЦИЯ И УЧЁТ*
-• Отметить начало и конец каждой смены через бот
-• Зарплата = часы × ставка
-
-━━━━━━━━━━━━━━━━━━━━━━
-⚖️ *6. ОТВЕТСТВЕННОСТЬ*
-• Нарушение → предупреждение → удержание → блокировка
-
-_Нажимая «Принимаю» вы подтверждаете согласие с правилами._"""
-
-# ── DATABASE MODELS ───────────────────────────────────────────────────────────
 
 class Base(DeclarativeBase):
     pass
@@ -1412,7 +1313,7 @@ async def adm_export(msg: Message):
         await msg.answer(f"✅ Данные экспортированы!\nhttps://docs.google.com/spreadsheets/d/{sid}",
                          reply_markup=kb_admin())
     except Exception as ex:
-        logger.error("sheets export failed", error=str(ex))
+        logger.error("sheets export failed")
         await msg.answer("❌ Ошибка экспорта. Проверьте подключение к Google Sheets.")
 
 # ════════════════ EXPIRY CHECK ════════════════════════════════════════════════
@@ -1436,57 +1337,21 @@ async def check_expiry(bot: Bot):
                                 f"Обратитесь к разработчику для продления.", parse_mode="Markdown")
                         except Exception: pass
 
-# ════════════════ FASTAPI APP ═════════════════════════════════════════════════
 
-_bot: Optional[Bot] = None
-_dp:  Optional[Dispatcher] = None
+# ════════════════ MAIN (POLLING) ══════════════════════════
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global _bot, _dp
-    # Env vars read lazily — no DB connection at startup
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-    if token:
-        _bot = Bot(token=token)
-        _dp  = Dispatcher(storage=CWRedisStorage())
-        _dp.include_router(sa_r)
-        _dp.include_router(admin_r)
-        _dp.include_router(reg_r)
-        _dp.include_router(shift_r)
-        _dp.include_router(sal_r)
-        logger.info("Bellini Bot SaaS ready", super_admins=list(SUPER_ADMIN_IDS))
-    else:
-        logger.warning("TELEGRAM_BOT_TOKEN not set — webhook inactive")
-    yield
-    if _bot:
-        await _bot.session.close()
-
-app = FastAPI(title="Bellini Bot SaaS", version="2.0.0", lifespan=lifespan)
-
-class SetupReq(BaseModel):
-    action: str = Field("status", description="status / check_expiry")
-
-class SetupResp(BaseModel):
-    ok: bool; message: str = ""
-
-@app.post("/", response_model=SetupResp)
-async def setup(req: SetupReq):
-    if req.action == "check_expiry" and _bot:
-        await check_expiry(_bot); return SetupResp(ok=True, message="Expiry check done")
-    return SetupResp(ok=True, message=f"Bellini Bot SaaS v2 | bot={'active' if _bot else 'inactive'}")
-
-@app.post("/telegram_webhook")
-async def webhook(request: Request):
-    if _bot is None or _dp is None:
-        return {"ok": False, "error": "Bot not initialised — check TELEGRAM_BOT_TOKEN"}
-    body = await request.json()
-    upd_data = body.get("payload", body)
-    try:
-        upd = Update.model_validate(upd_data)
-        await _dp.feed_update(bot=_bot, update=upd)
-    except Exception as ex:
-        logger.error("webhook error", error=str(ex))
-    return {"ok": True}
+async def main():
+    token = os.environ["BOT_TOKEN"]
+    bot = Bot(token=token)
+    dp = Dispatcher(storage=MemoryStorage())
+    dp.include_router(sa_r)
+    dp.include_router(admin_r)
+    dp.include_router(reg_r)
+    dp.include_router(shift_r)
+    dp.include_router(sal_r)
+    await ensure_db()
+    logger.info("CayteringWork Bot starting...")
+    await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
 
 if __name__ == "__main__":
-    run_service(app)
+    asyncio.run(main())
